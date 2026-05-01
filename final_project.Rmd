@@ -1,0 +1,142 @@
+---
+title: "Final Project Written Report"
+author: "Eva Vincent, Melissa Yee"
+date: "2026-04-27"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ISLR2)
+library(dplyr)
+library(MASS)
+library(DHARMa)
+library(car)
+
+# load datasets
+train <- read_csv("stroke_risk_train.csv")
+test <- read_csv("stroke_risk_test.csv")
+```
+
+
+# 1. Exploratory Data Analysis
+## Data Cleaning
+```{r, include=FALSE}
+# Turn gender into dummy variable
+train <- train %>%
+  filter(gender != "Other") %>%
+  mutate(gender = ifelse(gender == "Female", 1, 0))
+
+# Investigate missing values
+table(train$smoking_status)
+
+# Re-code smoking variable to smoked or never smoked
+train$smoking_status <- ifelse(train$smoking_status %in% c("formerly smoked", "smokes"),
+"smoked",train$smoking_status) 
+
+train$smoking_status <- ifelse(train$smoking_status == "never","Never", train$smoking_status)
+
+train$smoking_status <- ifelse(train$smoking_status == "Unknown","unknown", train$smoking_status)
+
+
+```
+To preprocess our data, we reviewed the features and their data types in the stroke risk dataset. First, we used one hot encoding to convert the gender column, labeled as “Male” and “Female”, into a dummy variable where 1 represents a female and 0 represents a male. We also discovered there was one observation with a gender of ”Other,” which we decided to discard as one instance would not be significant to our model creation. Then, we investigated missing values in the smoking status feature. We discovered there was a significant amount of “Unknown” in the smoking status variable (1084 individuals), which could interfere with our model’s predictions. We decided to recode and consolidate the smoking status variable into “smoked” vs “never smoked” while also accounting for “unknown” as a factor. The “smoked” category combines all instances recorded as “smokes” and “formerly smoked.” After this step, we determined that our data was cleaned enough to begin visualizing and exploring the dataset. 
+
+
+## Visual Summaries
+```{r, echo=FALSE}
+# Stacked bar chart of relationship between hypertension and stroke risk
+ggplot(train, aes(x = hypertension, fill = factor(stroke))) +
+  geom_bar(position = "fill")+
+  labs(title = "Stroke Risk by Hypertension Status",
+       x= "Hypertension",
+       y = "Proportion") + theme_minimal()
+
+# Histogram of glucose level
+ggplot(data=train, aes(x=avg_glucose_level)) + geom_histogram(bins=40, fill = "maroon", color="black") +
+  labs(title = "Distribution of Average Glucose Level",
+       x= "Mean Glucose Level",
+       y = "Count") +
+  theme_minimal()
+
+# Histogram of Age
+ggplot(data=train, aes(x=age)) + geom_histogram(bins = 20, fill = "lightblue", color="black") +
+  labs(title = "Distribution of Age",
+       x= "Age",
+       y = "Count") +
+  theme_minimal()
+
+```
+Our first visualization explores the relationship between stroke risk and hypertension. In this stacked bar chart, it reveals that there is a higher proportion of people who have a stroke among people with hypertension. Likewise, there is a lower proportion of people who have a stroke among those without hypertension. This indicates hypertension could be a valuable predictor for our model. 
+
+Next, we visualized the distribution of average glucose level across individuals in the dataset. The distribution is heavily right-skewed and bimodal with a large peak around 75 and a small peak at 225. There does not appear to be any visible outliers in average glucose levels.
+
+
+Then, we visualized the distribution of ages of individuals in the dataset. The distribution of ages is unimodal with a peak around 55 years old and has a large standard deviation. This indicates there is a large amount of instances across many different ages, which could provide helpful information for people of similar age groups. 
+
+
+
+# 2. Model Building & Justification
+## Final Model Description
+Identifying stroke risk is a binary classification task, so we chose logistic regression for our model. In R, we implemented a generalized linear model with the logit link. The sigmoid function used in the logit link is ideal for binary classification because it bounds the predictions between 0 and 1.
+
+
+## Predictor Selection
+Based on our exploratory data analysis, there was a higher proportion of people who had strokes among those who had hypertension. As with many health concerns, the risk of having a stroke increases with age. We included age as a predictor based on previous knowledge, and it is the most significant predictor in the model at p < 0.001. Based on the distribution of average glucose level, there appeared to be a significant portion of individuals who deviated from the most common glucose levels. This was noted as a population of interest in our EDA and was a significant predictor at p < 0.05. In addition, none of the predictors included in our model contained 0 in their confidence intervals.
+
+```{r, include=FALSE}
+# Create logistic regression model
+log_model <- glm(stroke ~ age + avg_glucose_level + hypertension, data=train, family=binomial(link="logit"))
+```
+
+
+# 3. Model Evaluation: Diagnostics & Comparison
+## Diagnostics
+```{r, include=FALSE}
+summary(log_model)
+vif(log_model)
+
+sim_log_model <- simulateResiduals(fittedModel = log_model)
+plot(sim_log_model)
+
+confint(log_model)
+```
+To evaluate assumptions of logistic regression, we used DHARMa plots of simulations based on the model we fit. We can compare the observed residuals to what we are expecting according to the simulations. In the Q-Q plot, points align with the dashed line indicating a generalized linear model with the logit link function is a good distributional fit. In the DHARMa residual vs. predicted plot, the dashed line is closely centered around the solid line of 0.5, so the linearity assumption is met. Lastly, in the same plot, there seems to be an even vertical scatter between model predictions, indicating the constant variance assumption is met. 
+
+
+## Model Comparison
+```{r, include=FALSE}
+lm_model <- lm(stroke ~ age + avg_glucose_level + hypertension, data=train)
+summary(lm_model)
+plot(lm_model)
+```
+A direct comparison model is a linear regression model with the same predictors as our primary model. This model does not perform as well on our dataset because our outcome variable is binary, and this is a classification task. Since linear regression predicts values outside of the range of 0 or 1, its predictions will not be meaningful in this context. The logit link function in our generalized linear model bounds all predictions between 0 and 1, so we can interpret and use its predictions effectively. Additionally, our model violates linear regression assumptions of normality in the Q-Q plot as well as constant variance and linearity in the standardized residuals vs fitted residuals plot. Linear regression is a poor alternative to logistic regression in model selection.
+
+
+# 4. Interpretation & Communication
+## Statistical Findings
+Age: Every one-year increase in age is expected to multiply the odds of having a stroke by e^0.0725 on average, holding average glucose level and hypertension status constant. 
+
+
+Average glucose level: Every 1-unit increase in average glucose level is expected to multiply the odds of having a stroke by e^0.00360 on average, holding age and hypertension status constant. 
+
+
+Hypertension: Having hypertension is expected to multiply the odds of having a stroke by e^0.458 on average, holding age and average glucose level constant. 
+
+
+## Applied Communication
+Based on the model’s summary output, age is the strongest predictor of stroke risk. According to our model, every additional year in age is associated with a 7.5% increase in the odds of stroke risk, holding glucose level and hypertension status constant. This indicates that elderly populations are at increased risk of stroke and should take precautionary measures such as frequent doctors visits and medications if necessary. Based on the model interpretation, having hypertension is associated with a 58% increase in the odds of having a stroke. Therefore, high-risk individuals should closely monitor their glucose levels and be aware of early signs of hypertension to reduce their chances of having a stroke. 
+
+
+```{r, include=FALSE}
+pred <- predict(log_model, test, type="response")
+
+results_df <- data.frame(
+  id = test$id,
+  prediction = pred
+)
+
+write.csv(results_df, "results.csv", row.names = FALSE)
+```
+
